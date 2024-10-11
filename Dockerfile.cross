@@ -1,0 +1,16 @@
+# This image is meant to enable cross-architecture builds.
+# It assumes the reth binary has already been compiled for `$TARGETPLATFORM` and is
+# locatable in `./dist/bin/$TARGETARCH`
+FROM --platform=$TARGETPLATFORM ubuntu:22.04
+
+LABEL org.opencontainers.image.source=https://github.com/scalarorg/scalar-eth
+LABEL org.opencontainers.image.licenses="MIT OR Apache-2.0"
+
+# Filled by docker buildx
+ARG TARGETARCH
+
+COPY ./dist/bin/$TARGETARCH/scalar /usr/local/bin/scalar
+ADD ./etc/scalar-genesis.json /etc/scalar-genesis.json
+
+EXPOSE 30303 30303/udp 9001 8545 8546 9000
+ENTRYPOINT ["/usr/local/bin/scalar", "--chain", "/etc/scalar-genesis.json"]
