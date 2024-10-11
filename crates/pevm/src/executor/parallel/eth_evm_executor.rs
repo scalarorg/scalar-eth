@@ -2,20 +2,20 @@
 
 use ahash::AHashMap;
 use alloc::{boxed::Box, vec, vec::Vec};
-use async_scoped::{AsyncStdScope, TokioScope};
+use async_scoped::AsyncStdScope;
 use core::fmt::Display;
 use reth_chainspec::{ChainSpec, EthereumHardforks};
 use reth_evm::{
     execute::{BlockExecutionError, ProviderError},
-    system_calls::{NoopHook, OnStateHook, SystemCaller},
+    system_calls::{OnStateHook, SystemCaller},
     ConfigureEvm,
 };
 use reth_execution_errors::{BlockValidationError, InternalBlockExecutionError};
-use reth_primitives::{BlockWithSenders, Header, Receipt, Request, TxType};
+use reth_primitives::{BlockWithSenders, Header, Receipt, TxType};
 use reth_revm::{db::State, Evm};
-use reth_tracing::tracing::info;
+use reth_tracing::tracing::{debug, info};
 use revm::DatabaseCommit;
-use revm_primitives::{db::Database, ResultAndState, TxEnv, B256, U256};
+use revm_primitives::{db::Database, ResultAndState, TxEnv, U256};
 use std::{
     num::NonZeroUsize,
     sync::{mpsc, Arc, Mutex, OnceLock},
@@ -39,8 +39,7 @@ use super::{
     context::ParallelEvmContextTrait,
     evm::{EvmWrapper, ExecutionError, PevmTxExecutionResult, VmExecutionError, VmExecutionResult},
     memory::MvMemory,
-    scheduler,
-    storage::{InMemoryStorage, Storage},
+    storage::Storage,
     types::{MemoryLocation, Task, TxVersion},
     Scheduler,
 };
@@ -202,7 +201,7 @@ where
         // })?;
         let block_env = evm.block();
         let block_size = block.transactions_with_sender().count();
-        info!(target: "scalaris::pevm", "parallel transition with block size: {}", block_size);
+        debug!(target: "scalaris::pevm", "parallel transition with block size: {}", block_size);
         let scheduler = Scheduler::new(block_size);
 
         let chain = PevmEthereum::mainnet();
@@ -228,13 +227,15 @@ where
         );
         let mut abort_reason = OnceLock::new();
         let concurrency_level = Self::get_concurrency_level();
-        for _ in 0..concurrency_level {
+        for i in 0..concurrency_level {
             unsafe {
                 AsyncStdScope::scope(|scope| {
                     // Use the scope to spawn the future.
                     scope.spawn(async {
+                        debug!(target: "scalaris::pevm", "Started excution worker {}", i);
                         let mut task = scheduler.next_task();
                         while task.is_some() {
+                            debug!(target: "scalaris::pevm", "try execute next task {:?}", &task);
                             task = match task.unwrap() {
                                 Task::Execution(tx_version) => self.try_execute(
                                     &evm_wapper,
@@ -246,7 +247,7 @@ where
                                     try_validate(&mv_memory, &scheduler, &tx_version)
                                 }
                             };
-
+                            debug!(target: "scalaris::pevm", "Task after execute {:?}", &task);
                             // TODO: Have different functions or an enum for the caller to choose
                             // the handling behaviour when a transaction's EVM execution fails.
                             // Parallel block builders would like to exclude such transaction,
@@ -532,9 +533,12 @@ where
                     None
                 }
                 Ok(VmExecutionResult { execution_result, flags }) => {
+                    debug!(target: "scalaris::pevm", "Finished execution with result {:?}", execution_result);
                     *index_mutex!(self.execution_results, tx_version.tx_idx) =
                         Some(execution_result);
-                    scheduler.finish_execution(tx_version, flags)
+                    let next_task = scheduler.finish_execution(tx_version, flags);
+                    debug!(target: "scalaris::pevm", "Finished execution with next task {:?}", &next_task);
+                    next_task
                 }
             };
         }

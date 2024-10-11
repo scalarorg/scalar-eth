@@ -15,6 +15,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![warn(unused_crate_dependencies)]
 
-// pub mod chainspec;
-// pub mod evm;
-// pub mod node;
+mod chain_provider;
+pub mod chainspec;
+pub mod evm;
+pub mod node;
+pub use chain_provider::*;

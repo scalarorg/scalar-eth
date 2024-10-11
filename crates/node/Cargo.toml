@@ -12,9 +12,11 @@ categories.workspace = true
 [dependencies]
 scalar-precompile.workspace = true
 once_cell.workspace = true
+reth.workspace = true
 reth-cli.workspace = true
 reth-node-api.workspace = true
 reth-node-builder.workspace = true
+reth-node-ethereum = { workspace = true, features = ["test-utils"] }
 reth-optimism-node.workspace = true
 reth-optimism-forks.workspace = true
 reth-optimism-chainspec.workspace = true

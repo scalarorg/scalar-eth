@@ -2,21 +2,22 @@
 
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 mod builder;
-mod config;
 use builder::*;
 use clap::{Args, Parser};
-use config::*;
-use reth::{args::utils::DefaultChainSpecParser, cli::Cli};
+use reth::cli::Cli;
+use reth_ethereum_cli::chainspec::EthereumChainSpecParser;
 use reth_node_builder::{
     engine_tree_config::{
         TreeConfig, DEFAULT_MEMORY_BLOCK_BUFFER_TARGET, DEFAULT_PERSISTENCE_THRESHOLD,
     },
     EngineNodeLauncher,
 };
-use reth_node_ethereum::{node::EthereumAddOns, EthereumNode};
 
-use reth_provider::providers::BlockchainProvider2;
 use reth_tracing::{RethTracer, Tracer};
+use scalar_node::{
+    node::{ScalarNode, ScalarNodeAddOns},
+    ScalarChainProvider,
+};
 /// Parameters for configuring the engine
 #[derive(Debug, Clone, Args, PartialEq, Eq)]
 #[command(next_help_heading = "Engine")]
@@ -53,8 +54,8 @@ fn main() -> eyre::Result<()> {
     if std::env::var_os("RUST_BACKTRACE").is_none() {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
-    let res =
-        Cli::<DefaultChainSpecParser, EngineArgs>::parse().run(|builder, engine_args| async move {
+    let res = Cli::<EthereumChainSpecParser, EngineArgs>::parse().run(
+        |builder, engine_args| async move {
             let enable_engine2 = engine_args.experimental;
             match enable_engine2 {
                 true => {
@@ -63,13 +64,13 @@ fn main() -> eyre::Result<()> {
                         .with_persistence_threshold(engine_args.persistence_threshold)
                         .with_memory_block_buffer_target(engine_args.memory_block_buffer_target);
                     let handle = builder
-                        .with_types_and_provider::<EthereumNode, BlockchainProvider2<_>>()
+                        .with_types_and_provider::<ScalarNode, ScalarChainProvider<_>>()
                         .with_components(
-                            EthereumNode::components()
+                            ScalarNode::components()
                                 .executor(ParallelExecutorBuilder::default())
                                 .payload(ScalarPayloadBuilder::default()),
                         )
-                        .with_add_ons::<EthereumAddOns>()
+                        .with_add_ons(ScalarNodeAddOns::default())
                         .launch_with_fn(|builder| {
                             let launcher = EngineNodeLauncher::new(
                                 builder.task_executor().clone(),
@@ -83,11 +84,12 @@ fn main() -> eyre::Result<()> {
                 }
                 false => {
                     println!("Starting reth with default engine");
-                    let handle = builder.launch_node(EthereumNode::default()).await?;
+                    let handle = builder.launch_node(ScalarNode::default()).await?;
                     handle.node_exit_future.await
                 }
             }
-        });
+        },
+    );
     if let Err(err) = res {
         eprintln!("Error: {err:?}");
         std::process::exit(1);

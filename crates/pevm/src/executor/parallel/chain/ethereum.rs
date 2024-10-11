@@ -214,7 +214,7 @@ impl PevmChain for PevmEthereum {
 
         // 2. Create an iterator of [ReceiptEnvelope]
         let receipt_envelope_iter = Iterator::zip(tx_types.iter(), tx_results.iter()).map(
-            |(tx_type, PevmTxExecutionResult { receipt, state })| {
+            |(tx_type, PevmTxExecutionResult { receipt, state: _state })| {
                 let receipt = Receipt {
                     status: receipt.success.into(),
                     cumulative_gas_used: receipt.cumulative_gas_used as u128,

@@ -11,7 +11,6 @@
 //! precompiles defined by [`alphanet_precompile`].
 
 use alloy_primitives::{Address, Bytes, TxKind, U256};
-use alphanet_precompile::secp256r1;
 use reth_chainspec::{ChainSpec, EthereumHardfork, Head};
 use reth_node_api::{ConfigureEvm, ConfigureEvmEnv, NextBlockEnvAttributes};
 use reth_optimism_chainspec::OpChainSpec;
@@ -31,6 +30,7 @@ use reth_revm::{
     },
     ContextPrecompiles, Database, Evm, EvmBuilder, GetInspector,
 };
+use scalar_precompile::secp256r1;
 use std::sync::Arc;
 
 /// Custom EVM configuration

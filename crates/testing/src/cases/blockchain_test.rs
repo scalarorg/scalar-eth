@@ -5,16 +5,23 @@ use crate::{
     Case, Error, Suite,
 };
 use ahash::AHashMap;
+use alloy_primitives::keccak256;
 use alloy_rlp::Decodable;
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use reth_primitives::{BlockBody, SealedBlock, StaticFileSegment};
+use reth_primitives::{revm_primitives::Bytecode, BlockBody, SealedBlock, StaticFileSegment};
 use reth_provider::{
     providers::StaticFileWriter, test_utils::create_test_provider_factory_with_chain_spec,
     DatabaseProviderFactory, HashingWriter, StaticFileProviderFactory,
 };
 use reth_stages::{stages::ExecutionStage, ExecInput, Stage};
 use reth_tracing::{tracing::debug, RethTracer, Tracer};
-use scalar_pevm::{executor::parallel::types::EvmAccount, ParallelEvmConfig, SequencialEvmConfig};
+use scalar_pevm::{
+    executor::parallel::{
+        context::ParallelEvmContextTrait,
+        types::{EvmAccount, EvmCode},
+    },
+    ParallelEvmConfig,
+};
 use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
 
 /// A handler for the blockchain test suite.
@@ -130,16 +137,27 @@ impl Case for BlockchainTestCase {
                     .unwrap();
                 // Create external context in the ParallelEvmConfig
                 let mut config = ParallelEvmConfig::new(Arc::new(case.network.clone().into()));
-                // for (address, account) in case.pre.deref() {
-                //     let evm_account = EvmAccount {
-                //         balance: account.balance,
-                //         nonce: account.nonce,
-                //         code: Some(account.code.clone()),
-                //         storage: AHashMap::new(),
-                //         code_hash: account.code_hash(),
-                //     };
-                //     config.context.insert_address(address.clone(), account);
-                // }
+                for (address, account) in case.pre.deref() {
+                    let (code, code_hash) = if account.code.len() == 0 {
+                        (None, None)
+                    } else {
+                        let code_hash = keccak256(account.code.as_ref());
+                        let bytecode = Bytecode::new_raw(account.code.clone());
+                        let code = EvmCode::from(bytecode);
+
+                        (Some(code), Some(code_hash))
+                    };
+                    let evm_account = EvmAccount {
+                        balance: account.balance,
+                        nonce: account.nonce.to(),
+                        code,
+                        storage: AHashMap::from_iter(
+                            account.storage.iter().map(|(k, v)| (k.clone(), v.clone())),
+                        ),
+                        code_hash,
+                    };
+                    config.context.insert_address(address.clone(), evm_account);
+                }
                 // Execute the execution stage using the Parallel EVM processor factory for the test case
                 // network.
                 let excutor_provider = scalar_pevm::executor::ParallelExecutorProvider::new(

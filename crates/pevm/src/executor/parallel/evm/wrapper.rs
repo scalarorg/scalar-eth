@@ -1,5 +1,6 @@
 use crate::executor::parallel::{
     chain::{PevmChain, RewardPolicy},
+    evm::ExecutionError,
     memory::MvMemory,
     storage::Storage,
     types::{
@@ -8,6 +9,7 @@ use crate::executor::parallel::{
     },
 };
 use reth_primitives::TxType;
+use reth_tracing::tracing::{debug, warn};
 use revm::{Context, Database, Evm, EvmContext};
 use revm_primitives::{
     Address, BlockEnv, CfgEnv, EVMError, Env, InvalidTransaction, SpecId, TxEnv, U256,
@@ -76,8 +78,15 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
         &self,
         tx_version: &TxVersion,
     ) -> Result<VmExecutionResult, VmExecutionError> {
+        debug!(target: "scalaris::pevm", "Executing transaction with index {} of {}", tx_version.tx_idx, self.txs.len());
         // SAFETY: A correct scheduler would guarantee this index to be inbound.
-        let (tx, tx_type) = unsafe { self.txs.get_unchecked(tx_version.tx_idx) };
+        let (tx, tx_type) = self.txs.get(tx_version.tx_idx).ok_or_else(|| {
+            VmExecutionError::ExecutionError(ExecutionError::Custom(format!(
+                "Transaction at index {} not found",
+                tx_version.tx_idx
+            )))
+        })?;
+
         let from_hash = self.hash_basic(tx.caller);
         let to_hash = tx.transact_to.to().map(|to| self.hash_basic(*to));
 
@@ -86,6 +95,7 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
             .map_err(VmExecutionError::from)?;
         // TODO: Share as much [Evm], [Context], [Handler], etc. among threads as possible
         // as creating them is very expensive.
+        warn!(target: "scalaris::pevm", "Build evm for each execution, must build seperate evm for each task executor");
         let mut evm = build_evm(
             &mut db,
             self.chain,

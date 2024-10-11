@@ -24,7 +24,7 @@ reth-provider = { workspace = true, features = ["test-utils"] }
 reth-stages.workspace = true
 reth-evm-ethereum.workspace = true
 reth-tracing.workspace = true
-scalar-pevm = { path = "../pevm" }
+scalar-pevm.workspace = true
 
 alloy-rlp.workspace = true
 alloy-primitives.workspace = true

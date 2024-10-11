@@ -1,3 +1,5 @@
+//! External context for store inmemory storage for Parallel EVM
+
 use super::{storage::InMemoryStorage, types::EvmAccount};
 use alloy_primitives::Address;
 use revm_primitives::B256;
@@ -5,7 +7,7 @@ use revm_primitives::B256;
 /// Parallel EVM external context trait
 /// For Manipulation external context in EVMWrapper
 pub trait ParallelEvmContextTrait {
-    // fn storage(&self) -> &InMemoryStorage<'_>;
+    fn storage(&self) -> &InMemoryStorage<'_>;
     fn insert_address(&mut self, address: Address, account: EvmAccount);
     fn set_block_hash(&mut self, number: u64, hash: B256);
 }
@@ -24,9 +26,9 @@ impl ParallelEvmContext {
 }
 
 impl ParallelEvmContextTrait for ParallelEvmContext {
-    // fn storage(&self) -> &InMemoryStorage<'_> {
-    //     &self.storage
-    // }
+    fn storage(&self) -> &InMemoryStorage<'_> {
+        &self.storage
+    }
     fn insert_address(&mut self, address: Address, account: EvmAccount) {
         self.storage.insert_address(address, account);
     }

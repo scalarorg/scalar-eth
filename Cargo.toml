@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "bin/scalar/",
-    "bin/optimism/",
     "crates/node",
     "crates/pevm",
     "crates/precompile",
@@ -107,7 +106,10 @@ revm = { version = "14.0.3", features = [
 revm-inspectors = "0.7.6"
 revm-primitives = { version = "10.0.0", features = ["std"], default-features = false }
 
-# reth
+# Use reth version on 10/11/2024
+# Update reth version when needed
+# Currently Cargo does not support dynamic revision in env variable
+
 reth = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
 reth-chainspec = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60", features = ["std", "optimism"]  }
 reth-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
@@ -136,8 +138,9 @@ reth-testing-utils = { git = "https://github.com/paradigmxyz/reth.git", rev = "5
 
 # ethereum
 reth-evm-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
-reth-ethereum-consensus = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
 reth-node-ethereum = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60", features = ["test-utils"] }
+reth-ethereum-consensus = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
+reth-ethereum-cli = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
 reth-ethereum-forks = { git = "https://github.com/paradigmxyz/reth.git", rev = "58bfa60" }
 
 # optimism

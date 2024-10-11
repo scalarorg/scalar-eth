@@ -61,7 +61,7 @@ pub static ALPHANET_MAINNET: Lazy<Arc<OpChainSpec>> = Lazy::new(|| {
         chain: Chain::from_named(NamedChain::Alphanet),
         // genesis contains empty alloc field because state at first bedrock block is imported
         // manually from trusted source
-        genesis: serde_json::from_str(include_str!("../../../etc/alphanet-genesis.json"))
+        genesis: serde_json::from_str(include_str!("../../../etc/scalar-genesis.json"))
             .expect("Can't deserialize alphanet genesis json"),
         genesis_hash: once_cell_set(b256!(
             "2f980576711e3617a5e4d83dd539548ec0f7792007d505a3d2e9674833af2d7c"

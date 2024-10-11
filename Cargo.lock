@@ -570,8 +570,6 @@ dependencies = [
  "alloy-primitives",
  "alloy-signer",
  "async-trait",
- "coins-bip32",
- "coins-bip39",
  "k256",
  "rand",
  "thiserror",
@@ -1233,12 +1231,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8c3c1a368f70d6cf7302d78f8f7093da241fb8e8807c05cc9e51a125895a6d5b"
 
 [[package]]
-name = "bech32"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
-
-[[package]]
 name = "bimap"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1541,7 +1533,6 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf88ba1141d185c399bee5288d850d63b8369520c1eafc32a0430b5b6c287bf4"
 dependencies = [
- "sha2 0.10.8",
  "tinyvec",
 ]
 
@@ -1761,57 +1752,6 @@ name = "clap_lex"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
-
-[[package]]
-name = "coins-bip32"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2073678591747aed4000dd468b97b14d7007f7936851d3f2f01846899f5ebf08"
-dependencies = [
- "bs58",
- "coins-core",
- "digest 0.10.7",
- "hmac 0.12.1",
- "k256",
- "serde",
- "sha2 0.10.8",
- "thiserror",
-]
-
-[[package]]
-name = "coins-bip39"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74b169b26623ff17e9db37a539fe4f15342080df39f129ef7631df7683d6d9d4"
-dependencies = [
- "bitvec",
- "coins-bip32",
- "hmac 0.12.1",
- "once_cell",
- "pbkdf2",
- "rand",
- "sha2 0.10.8",
- "thiserror",
-]
-
-[[package]]
-name = "coins-core"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b962ad8545e43a28e14e87377812ba9ae748dd4fd963f4c10e9fcc6d13475b"
-dependencies = [
- "base64 0.21.7",
- "bech32",
- "bs58",
- "const-hex",
- "digest 0.10.7",
- "generic-array",
- "ripemd",
- "serde",
- "sha2 0.10.8",
- "sha3",
- "thiserror",
-]
 
 [[package]]
 name = "colorchoice"
@@ -4650,25 +4590,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "op-scalar"
-version = "0.0.0"
-dependencies = [
- "alloy-network",
- "alloy-primitives",
- "alloy-signer-local",
- "clap",
- "eyre",
- "reth-cli-util",
- "reth-node-builder",
- "reth-optimism-cli",
- "reth-optimism-node",
- "reth-optimism-rpc",
- "reth-provider",
- "scalar-node",
- "tracing",
-]
-
-[[package]]
 name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4800,16 +4721,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8ed6a7761f76e3b9f92dfb0a60a6a6477c61024b775147ff0973a02653abaf2"
-dependencies = [
- "digest 0.10.7",
- "hmac 0.12.1",
-]
 
 [[package]]
 name = "pem"
@@ -7052,50 +6963,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-optimism-cli"
-version = "1.0.8"
-source = "git+https://github.com/paradigmxyz/reth.git?rev=58bfa60#58bfa60cea9d80d28149cee6d621bf8b6845ddbf"
-dependencies = [
- "alloy-primitives",
- "alloy-rlp",
- "clap",
- "eyre",
- "futures-util",
- "reth-chainspec",
- "reth-cli",
- "reth-cli-commands",
- "reth-cli-runner",
- "reth-config",
- "reth-consensus",
- "reth-db",
- "reth-db-api",
- "reth-db-common",
- "reth-downloaders",
- "reth-errors",
- "reth-execution-types",
- "reth-network-p2p",
- "reth-node-builder",
- "reth-node-core",
- "reth-node-events",
- "reth-node-metrics",
- "reth-optimism-chainspec",
- "reth-optimism-evm",
- "reth-optimism-node",
- "reth-optimism-primitives",
- "reth-primitives",
- "reth-provider",
- "reth-prune",
- "reth-stages",
- "reth-stages-types",
- "reth-static-file",
- "reth-static-file-types",
- "reth-tracing",
- "tokio",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "reth-optimism-consensus"
 version = "1.0.8"
 source = "git+https://github.com/paradigmxyz/reth.git?rev=58bfa60#58bfa60cea9d80d28149cee6d621bf8b6845ddbf"
@@ -8555,12 +8422,13 @@ dependencies = [
 name = "scalar"
 version = "0.0.0"
 dependencies = [
- "alloy-primitives",
  "clap",
  "eyre",
  "reth",
  "reth-chainspec",
+ "reth-cli",
  "reth-cli-util",
+ "reth-ethereum-cli",
  "reth-evm-ethereum",
  "reth-node-api",
  "reth-node-builder",
@@ -8568,6 +8436,7 @@ dependencies = [
  "reth-primitives",
  "reth-provider",
  "reth-tracing",
+ "scalar-node",
  "scalar-pevm",
  "tokio",
 ]
@@ -8579,12 +8448,14 @@ dependencies = [
  "alloy-primitives",
  "eyre",
  "once_cell",
+ "reth",
  "reth-chainspec",
  "reth-cli",
  "reth-network",
  "reth-network-types",
  "reth-node-api",
  "reth-node-builder",
+ "reth-node-ethereum",
  "reth-optimism-chainspec",
  "reth-optimism-forks",
  "reth-optimism-node",

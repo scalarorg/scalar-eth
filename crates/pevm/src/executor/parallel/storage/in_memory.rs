@@ -9,7 +9,7 @@ use crate::executor::parallel::types::{
 };
 /// A storage that stores chain data in memory.
 #[derive(Debug, Default, Clone)]
-pub(crate) struct InMemoryStorage<'a> {
+pub struct InMemoryStorage<'a> {
     accounts: ChainState,
     bytecodes: Option<&'a Bytecodes>,
     block_hashes: BlockHashes,

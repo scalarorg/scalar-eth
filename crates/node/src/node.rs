@@ -17,6 +17,7 @@ use reth_node_builder::{
     },
     BuilderContext, Node, NodeTypes,
 };
+use reth_node_ethereum::{node::EthereumAddOns, EthereumNode};
 use reth_optimism_chainspec::OpChainSpec;
 use reth_optimism_node::{
     args::RollupArgs,
@@ -28,6 +29,14 @@ use reth_optimism_node::{
 };
 use reth_payload_builder::PayloadBuilderHandle;
 use reth_transaction_pool::{SubPoolLimit, TransactionPool, TXPOOL_MAX_ACCOUNT_SLOTS_PER_SENDER};
+
+/// Define scalar Node
+/// Custom node with AlphaNetNode example
+pub type ScalarNode = EthereumNode;
+
+/// Define ScalarNodeAddOns
+/// Prepare for future use
+pub type ScalarNodeAddOns = EthereumAddOns;
 
 /// Type configuration for a regular AlphaNet node.
 #[derive(Debug, Clone, Default)]

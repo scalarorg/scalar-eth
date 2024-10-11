@@ -11,6 +11,7 @@ repository.workspace = true
 workspace = true
 
 [dependencies]
+revm.workspace = true
 # Reth
 reth-chainspec.workspace = true
 reth-ethereum-forks.workspace = true
@@ -22,7 +23,6 @@ reth-prune-types.workspace = true
 reth-execution-errors.workspace = true
 reth-execution-types.workspace = true
 reth-tracing.workspace = true
-revm.workspace = true
 
 # Ethereum
 revm-primitives.workspace = true
@@ -68,4 +68,6 @@ alloy-consensus.workspace = true
 [features]
 default = ["std"]
 std = []
-optimism = []
+optimism = [
+     "reth-primitives/optimism"
+]
