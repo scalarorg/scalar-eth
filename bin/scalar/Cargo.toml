@@ -1,0 +1,28 @@
+[package]
+name = "scalar"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reth.workspace = true
+reth-cli-util.workspace = true
+reth-chainspec.workspace = true
+reth-evm-ethereum.workspace = true
+reth-node-api.workspace = true
+reth-node-builder.workspace = true
+reth-primitives.workspace = true
+reth-provider.workspace = true
+reth-node-ethereum = { workspace = true, features = ["test-utils"] }
+reth-tracing.workspace = true
+scalar-pevm.workspace = true
+alloy-primitives.workspace = true
+clap.workspace = true
+eyre.workspace = true
+tokio.workspace = true
+
+[features]
+default = ["std"]
+std = []
+optimism=[]
