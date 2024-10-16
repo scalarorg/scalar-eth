@@ -10,8 +10,11 @@ use reth::{
 use reth_chainspec::ChainSpec;
 use reth_node_api::{FullNodeTypes, NodeTypes, NodeTypesWithEngine, PayloadTypes};
 use reth_node_ethereum::node::EthereumPayloadBuilder;
-use scalar_pevm::executor::{EthExecutorProvider, ParallelExecutorProvider};
+use scalar_pevm::executor::{
+    parallel::types::BlockExecutionRequest, EthExecutorProvider, ParallelExecutorProvider,
+};
 use scalar_pevm::{ParallelEvmConfig, SequencialEvmConfig};
+use tokio::sync::mpsc;
 
 /// Builds a regular ethereum block executor that uses the custom EVM.
 #[derive(Debug, Default, Clone, Copy)]
@@ -36,10 +39,16 @@ where
 }
 
 /// Builds a regular ethereum block executor that uses the custom EVM.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
-pub struct ParallelExecutorBuilder;
-
+pub struct ParallelExecutorBuilder {
+    tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
+}
+impl ParallelExecutorBuilder {
+    pub fn new(tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>) -> Self {
+        Self { tx_execution_request }
+    }
+}
 impl<Node> ExecutorBuilder<Node> for ParallelExecutorBuilder
 where
     Node: FullNodeTypes<Types: NodeTypes<ChainSpec = ChainSpec>>,
@@ -55,6 +64,7 @@ where
             ParallelExecutorProvider::new(
                 ctx.chain_spec(),
                 ParallelEvmConfig::new(ctx.chain_spec()),
+                self.tx_execution_request.clone(),
             ),
         ))
     }

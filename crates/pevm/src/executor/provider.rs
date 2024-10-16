@@ -1,5 +1,6 @@
 //! Ethereum block executor.
 
+use super::parallel::types::BlockExecutionRequest;
 use super::parallel::ParallelEvmContext;
 use super::{
     EthBatchExecutor, EthBlockExecutor, ParallelEthBatchExecutor, ParallelEthBlockExecutor,
@@ -15,6 +16,7 @@ use reth_evm::{
 use reth_primitives::Header;
 use reth_revm::{batch::BlockBatchRecord, db::State};
 use revm_primitives::db::Database;
+use tokio::sync::mpsc;
 /// Provides executors to execute regular ethereum blocks
 #[derive(Debug, Clone)]
 pub struct EthExecutorProvider<EvmConfig = EthEvmConfig> {
@@ -88,24 +90,32 @@ where
 pub struct ParallelExecutorProvider<EvmConfig = EthEvmConfig> {
     pub(super) chain_spec: Arc<ChainSpec>,
     pub(super) evm_config: EvmConfig,
+    pub(super) tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
 }
 
 impl ParallelExecutorProvider {
     /// Creates a new default ethereum executor provider.
-    pub fn ethereum(chain_spec: Arc<ChainSpec>) -> Self {
-        Self::new(chain_spec.clone(), EthEvmConfig::new(chain_spec))
+    pub fn ethereum(
+        chain_spec: Arc<ChainSpec>,
+        tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
+    ) -> Self {
+        Self::new(chain_spec.clone(), EthEvmConfig::new(chain_spec), tx_execution_request)
     }
 
     /// Returns a new provider for the mainnet.
-    pub fn mainnet() -> Self {
-        Self::ethereum(MAINNET.clone())
+    pub fn mainnet(tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>) -> Self {
+        Self::ethereum(MAINNET.clone(), tx_execution_request)
     }
 }
 
 impl<EvmConfig> ParallelExecutorProvider<EvmConfig> {
     /// Creates a new executor provider.
-    pub fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
-        Self { chain_spec, evm_config }
+    pub fn new(
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EvmConfig,
+        tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
+    ) -> Self {
+        Self { chain_spec, evm_config, tx_execution_request }
     }
 }
 
@@ -117,10 +127,16 @@ where
     where
         DB: Database<Error: Into<ProviderError>>,
     {
+        // Todo: Create thread safe single executor with a thread pool
+        // Each time the executor is required, it lock for single instance.
+        // execute method access thread pool for execution.
+        let state =
+            State::builder().with_database(db).with_bundle_update().without_state_clear().build();
         ParallelEthBlockExecutor::new(
             self.chain_spec.clone(),
             self.evm_config.clone(),
-            State::builder().with_database(db).with_bundle_update().without_state_clear().build(),
+            self.tx_execution_request.clone(),
+            state,
         )
     }
 }
@@ -143,9 +159,9 @@ where
         self.eth_executor(db)
     }
 
-    fn batch_executor<DB>(&self, db: DB) -> Self::BatchExecutor<DB>
+    fn batch_executor<D>(&self, db: D) -> Self::BatchExecutor<D>
     where
-        DB: Database<Error: Into<ProviderError> + Display>,
+        D: Database<Error: Into<ProviderError> + Display>,
     {
         let executor = self.eth_executor(db);
         ParallelEthBatchExecutor { executor, batch_record: BlockBatchRecord::default() }

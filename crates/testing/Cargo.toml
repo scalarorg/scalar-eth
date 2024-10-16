@@ -34,4 +34,5 @@ walkdir = "2.3.3"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 rayon.workspace = true

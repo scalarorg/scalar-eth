@@ -17,13 +17,13 @@ use reth_tracing::tracing::{debug, info};
 use revm::DatabaseCommit;
 use revm_primitives::{db::Database, ResultAndState, TxEnv, U256};
 use std::{
-    num::NonZeroUsize,
-    sync::{mpsc, Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     thread,
 };
 use tokio::{
     io,
     runtime::{Builder, Runtime},
+    sync::mpsc,
 };
 
 use crate::{
@@ -40,7 +40,7 @@ use super::{
     evm::{EvmWrapper, ExecutionError, PevmTxExecutionResult, VmExecutionError, VmExecutionResult},
     memory::MvMemory,
     storage::Storage,
-    types::{MemoryLocation, Task, TxVersion},
+    types::{BlockExecutionRequest, MemoryLocation, Task, TxVersion},
     Scheduler,
 };
 /// Errors when executing a block with pevm.
@@ -72,13 +72,13 @@ pub(super) enum AbortReason {
 // TODO: Better implementation
 #[derive(Debug)]
 struct AsyncDropper<T> {
-    sender: mpsc::Sender<T>,
+    sender: std::sync::mpsc::Sender<T>,
     _handle: thread::JoinHandle<()>,
 }
 
 impl<T: Send + 'static> Default for AsyncDropper<T> {
     fn default() -> Self {
-        let (sender, receiver) = mpsc::channel();
+        let (sender, receiver) = std::sync::mpsc::channel();
         Self { sender, _handle: std::thread::spawn(move || receiver.into_iter().for_each(drop)) }
     }
 }
@@ -92,47 +92,47 @@ impl<T> AsyncDropper<T> {
 
 /// Helper container type for EVM with chain spec.
 #[derive(Debug)]
-pub(super) struct ParallelEthEvmExecutor<EvmConfig> {
+pub struct ParallelEthEvmExecutor<EvmConfig> {
     /// The chainspec
-    pub(super) chain_spec: Arc<ChainSpec>,
+    chain_spec: Arc<ChainSpec>,
     /// How to create an EVM.
-    pub(super) evm_config: EvmConfig,
-    pub(super) hasher: ahash::RandomState,
-    pub(super) execution_results: Vec<Mutex<Option<PevmTxExecutionResult>>>,
+    evm_config: EvmConfig,
+    thread_count: usize,
+    rx_execution_request: mpsc::UnboundedReceiver<BlockExecutionRequest>,
+    hasher: ahash::RandomState,
+    execution_results: Vec<Mutex<Option<PevmTxExecutionResult>>>,
     dropper: AsyncDropper<(MvMemory, Scheduler, Vec<(TxEnv, TxType)>)>,
 }
 impl<EvmConfig> ParallelEthEvmExecutor<EvmConfig> {
-    pub(super) fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig) -> Self {
+    /// Create a new ParallelEthEvmExecutor
+    pub fn new(
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EvmConfig,
+        thread_count: usize,
+        rx_execution_request: mpsc::UnboundedReceiver<BlockExecutionRequest>,
+    ) -> Self {
         Self {
             chain_spec,
             evm_config,
+            thread_count,
+            rx_execution_request,
             execution_results: Vec::new(),
             hasher: ahash::RandomState::new(),
             dropper: AsyncDropper::default(),
         }
+    }
+    /// Start the executor thread
+    /// Spawns a new threads to execute the block in parallel
+    pub async fn start(&mut self) {
+        while let Some(BlockExecutionRequest { block, total_difficulty, result_sender }) =
+            self.rx_execution_request.recv().await
+        {}
     }
 }
 impl<EvmConfig> ParallelEthEvmExecutor<EvmConfig>
 where
     EvmConfig: ConfigureEvm<Header = Header>,
 {
-    #[inline]
-    fn get_concurrency_level() -> usize {
-        // This max should be tuned to the running machine,
-        // ideally also per block depending on the number of
-        // transactions, gas usage, etc. ARM machines seem to
-        // go higher thanks to their low thread overheads.
-        let concurent_level = thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).min(
-            NonZeroUsize::new(
-                #[cfg(target_arch = "aarch64")]
-                12,
-                #[cfg(not(target_arch = "aarch64"))]
-                8,
-            )
-            .unwrap(),
-        );
-        concurent_level.get()
-    }
     /// Creates tokio runtime based on the available parallelism.
     fn prepare_runtime(&self, workers: usize) -> io::Result<Runtime> {
         Builder::new_multi_thread()
@@ -226,8 +226,7 @@ where
             evm.spec_id(),
         );
         let mut abort_reason = OnceLock::new();
-        let concurrency_level = Self::get_concurrency_level();
-        for i in 0..concurrency_level {
+        for i in 0..4 {
             unsafe {
                 AsyncStdScope::scope(|scope| {
                     // Use the scope to spawn the future.

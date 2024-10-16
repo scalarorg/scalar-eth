@@ -18,11 +18,12 @@ use reth_tracing::{tracing::debug, RethTracer, Tracer};
 use scalar_pevm::{
     executor::parallel::{
         context::ParallelEvmContextTrait,
-        types::{EvmAccount, EvmCode},
+        types::{BlockExecutionRequest, EvmAccount, EvmCode},
     },
     ParallelEvmConfig,
 };
 use std::{collections::BTreeMap, fs, ops::Deref, path::Path, sync::Arc};
+use tokio::sync::mpsc;
 
 /// A handler for the blockchain test suite.
 #[derive(Debug)]
@@ -160,9 +161,11 @@ impl Case for BlockchainTestCase {
                 }
                 // Execute the execution stage using the Parallel EVM processor factory for the test case
                 // network.
+                let (tx_request, _rx) = mpsc::unbounded_channel::<BlockExecutionRequest>();
                 let excutor_provider = scalar_pevm::executor::ParallelExecutorProvider::new(
                     Arc::new(case.network.clone().into()),
                     config,
+                    tx_request,
                 );
                 // let excutor_provider = scalar_pevm::executor::EthExecutorProvider::new(
                 //     Arc::new(case.network.clone().into()),
