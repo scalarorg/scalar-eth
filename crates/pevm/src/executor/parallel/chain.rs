@@ -3,6 +3,7 @@
 use std::fmt::Debug;
 
 use super::{evm::PevmTxExecutionResult, memory::MvMemory, types::MemoryLocationHash};
+use alloy_consensus::Header as ConsensusHeader;
 use alloy_primitives::B256;
 use alloy_rpc_types::{BlockTransactions, Header};
 use revm::{
@@ -58,6 +59,12 @@ pub(crate) trait PevmChain: Debug {
     /// Get block's [SpecId]
     fn get_block_spec(&self, header: &Header) -> Result<SpecId, Self::BlockSpecError>;
 
+    // Get block's [SpecId]
+    fn get_block_spec_from_consensus_header(
+        &self,
+        header: &ConsensusHeader,
+    ) -> Result<SpecId, Self::BlockSpecError>;
+
     /// Get [TxEnv]
     fn get_tx_env(&self, tx: Self::Transaction) -> Result<TxEnv, Self::TransactionParsingError>;
 
@@ -99,7 +106,7 @@ pub(crate) trait PevmChain: Debug {
 }
 
 mod ethereum;
-pub(crate) use ethereum::PevmEthereum;
+pub use ethereum::PevmEthereum;
 
 #[cfg(feature = "optimism")]
 mod optimism;

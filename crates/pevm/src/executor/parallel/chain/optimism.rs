@@ -2,7 +2,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use alloy_chains::NamedChain;
-use alloy_consensus::{Receipt, Signed, TxEip1559, TxEip2930, TxEip7702, TxLegacy};
+use alloy_consensus::{
+    Header as ConsensusHeader, Receipt, Signed, TxEip1559, TxEip2930, TxEip7702, TxLegacy,
+};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Bytes, B256, U256};
 use alloy_rpc_types::{BlockTransactions, Header};
@@ -160,7 +162,29 @@ impl PevmChain for PevmOptimism {
             Err(OptimismBlockSpecError::UnsupportedSpec)
         }
     }
-
+    fn get_block_spec_from_consensus_header(
+        &self,
+        header: &ConsensusHeader,
+    ) -> Result<SpecId, Self::BlockSpecError> {
+        // TODO: The implementation below is only true for Optimism Mainnet.
+        // When supporting other networks (e.g. Optimism Sepolia), remember to adjust the code here.
+        if header.timestamp >= 1720627201 {
+            Ok(SpecId::FJORD)
+        } else if header.timestamp >= 1710374401 {
+            Ok(SpecId::ECOTONE)
+        } else if header.timestamp >= 1704992401 {
+            Ok(SpecId::CANYON)
+        } else if header.number >= 105235063 {
+            // On Optimism Mainnet, Bedrock and Regolith are activated at the same time.
+            // Therefore, this function never returns SpecId::BEDROCK.
+            // The statement above might not be true for other network, e.g. Optimism Goerli.
+            Ok(SpecId::REGOLITH)
+        } else {
+            // TODO: revm does not support pre-Bedrock blocks.
+            // https://docs.optimism.io/builders/node-operators/architecture#legacy-geth
+            Err(OptimismBlockSpecError::UnsupportedSpec)
+        }
+    }
     fn build_mv_memory(
         &self,
         hasher: &ahash::RandomState,

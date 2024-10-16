@@ -7,6 +7,7 @@ use revm::{
     interpreter::analysis::to_analysed,
     primitives::{Account, Bytecode, JumpTable},
 };
+use revm_primitives::EnvWithHandlerCfg;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::hash::{BuildHasherDefault, Hasher};
@@ -265,6 +266,7 @@ pub(crate) type WriteSet = Vec<(MemoryLocationHash, MemoryValue)>;
 #[derive(Debug)]
 pub struct BlockExecutionRequest {
     pub(crate) block: BlockWithSenders,
+    pub(crate) env: EnvWithHandlerCfg,
     pub(crate) total_difficulty: U256,
     pub(crate) result_sender: oneshot::Sender<EthExecuteOutput>,
 }
@@ -272,10 +274,11 @@ pub struct BlockExecutionRequest {
 impl BlockExecutionRequest {
     pub fn new(
         block: BlockWithSenders,
+        env: EnvWithHandlerCfg,
         total_difficulty: U256,
         result_sender: oneshot::Sender<EthExecuteOutput>,
     ) -> Self {
-        Self { block, total_difficulty, result_sender }
+        Self { block, env, total_difficulty, result_sender }
     }
 }
 // A scheduled worker task

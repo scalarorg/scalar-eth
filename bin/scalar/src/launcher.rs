@@ -11,7 +11,8 @@ use reth_node_builder::{
     NodeHandle,
 };
 use scalar_pevm::{
-    executor::parallel::types::BlockExecutionRequest, ParallelEthEvmExecutor, ParallelEvmConfig,
+    executor::parallel::{chain::PevmEthereum, types::BlockExecutionRequest},
+    ParallelEthEvmExecutor, ParallelEvmConfig,
 };
 use tokio::sync::mpsc;
 
@@ -65,15 +66,12 @@ where
             self;
         let task_executor = ctx.task_executor.clone();
         let chain_spec = config.chain.clone();
+        let chain = Arc::new(PevmEthereum::new(chain_spec.chain.id()));
         let evm_config = ParallelEvmConfig::new(chain_spec.clone());
         task_executor.spawn(Box::pin(async move {
-            let mut evm_executor = ParallelEthEvmExecutor::new(
-                chain_spec,
-                evm_config,
-                thread_count,
-                rx_execution_request,
-            );
-            evm_executor.start().await;
+            let mut evm_executor =
+                ParallelEthEvmExecutor::new(chain_spec, chain, evm_config, rx_execution_request);
+            evm_executor.start(thread_count).await;
         }));
         node_launcher.launch_node(target).await
     }
