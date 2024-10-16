@@ -16,11 +16,11 @@ use revm_primitives::{
 };
 
 /// Helper type for the output of executing a block.
-#[derive(Debug, Clone)]
-pub(super) struct EthExecuteOutput {
-    pub(super) receipts: Vec<Receipt>,
-    pub(super) requests: Vec<Request>,
-    pub(super) gas_used: u64,
+#[derive(Debug, Default, Clone)]
+pub struct EthExecuteOutput {
+    pub receipts: Vec<Receipt>,
+    pub requests: Vec<Request>,
+    pub gas_used: u64,
 }
 
 /// Helper container type for EVM with chain spec.

@@ -1,6 +1,6 @@
 //! Ethereum block executor.
 
-use super::{ParallelEthEvmExecutor, ParallelEvmContext};
+use super::{types::BlockExecutionRequest, ParallelEvmContext};
 use crate::{
     dao_fork::{DAO_HARDFORK_BENEFICIARY, DAO_HARDKFORK_ACCOUNTS},
     executor::eth_evm_executor::EthExecuteOutput,
@@ -17,6 +17,7 @@ use reth_evm::{
     system_calls::{NoopHook, OnStateHook},
     ConfigureEvm,
 };
+use reth_execution_errors::InternalBlockExecutionError;
 use reth_primitives::{BlockWithSenders, EthereumHardfork, Header, Receipt};
 use reth_revm::{
     db::{states::bundle_state::BundleRetention, State},
@@ -24,6 +25,7 @@ use reth_revm::{
 };
 use reth_tracing::tracing::{debug, info};
 use revm_primitives::{db::Database, BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandlerCfg};
+use tokio::sync::{mpsc, oneshot};
 /// A basic Ethereum block executor.
 ///
 /// Expected usage:
@@ -32,20 +34,34 @@ use revm_primitives::{db::Database, BlockEnv, CfgEnvWithHandlerCfg, EnvWithHandl
 #[derive(Debug)]
 pub struct ParallelEthBlockExecutor<EvmConfig, DB> {
     /// Chain specific evm config that's used to execute a block.
-    executor: ParallelEthEvmExecutor<EvmConfig>,
+    // executor: ParallelEthEvmExecutor<EvmConfig>,
+    chain_spec: Arc<ChainSpec>,
+    evm_config: EvmConfig,
+    tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
     /// The state to use for execution
     pub(super) state: State<DB>,
 }
 
 impl<EvmConfig, DB> ParallelEthBlockExecutor<EvmConfig, DB> {
     /// Creates a new Ethereum block executor.
-    pub fn new(chain_spec: Arc<ChainSpec>, evm_config: EvmConfig, state: State<DB>) -> Self {
-        Self { executor: ParallelEthEvmExecutor::new(chain_spec, evm_config), state }
+    pub fn new(
+        chain_spec: Arc<ChainSpec>,
+        evm_config: EvmConfig,
+        tx_execution_request: mpsc::UnboundedSender<BlockExecutionRequest>,
+        state: State<DB>,
+    ) -> Self {
+        Self {
+            //executor: ParallelEthEvmExecutor::new(chain_spec, evm_config, tx_execution_request),
+            chain_spec,
+            evm_config,
+            tx_execution_request,
+            state,
+        }
     }
 
     #[inline]
     pub(super) fn chain_spec(&self) -> &ChainSpec {
-        &self.executor.chain_spec
+        &self.chain_spec
     }
 
     /// Returns mutable reference to the state that wraps the underlying database.
@@ -69,12 +85,7 @@ where
     fn evm_env_for_block(&self, header: &Header, total_difficulty: U256) -> EnvWithHandlerCfg {
         let mut cfg = CfgEnvWithHandlerCfg::new(Default::default(), Default::default());
         let mut block_env = BlockEnv::default();
-        self.executor.evm_config.fill_cfg_and_block_env(
-            &mut cfg,
-            &mut block_env,
-            header,
-            total_difficulty,
-        );
+        self.evm_config.fill_cfg_and_block_env(&mut cfg, &mut block_env, header, total_difficulty);
 
         EnvWithHandlerCfg::new_with_cfg_env(cfg, block_env, Default::default())
     }
@@ -99,25 +110,37 @@ where
         &mut self,
         block: &BlockWithSenders,
         total_difficulty: U256,
-        state_hook: Option<F>,
+        _state_hook: Option<F>,
     ) -> Result<EthExecuteOutput, BlockExecutionError>
     where
         F: OnStateHook,
     {
         // 1. prepare state on new block
         self.on_new_block(&block.header);
-
+        // 2. Send execution request to the execution thread
+        let (result_sender, mut result_receiver) = oneshot::channel();
+        self.tx_execution_request
+            .send(BlockExecutionRequest::new(block.clone(), total_difficulty, result_sender))
+            .map_err(|e| {
+                BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e)))
+            })?;
+        // 3. Waiting for execution result
+        // Loop until the execution is complete
+        while let Ok(output) = result_receiver.try_recv() {
+            // 3. apply post execution changes
+            self.post_execution(block, total_difficulty)?;
+            return Ok(output);
+        }
         // 2. configure the evm and execute
-        let env = self.evm_env_for_block(&block.header, total_difficulty);
-        let output = {
-            let evm = self.executor.evm_config.evm_with_env(&mut self.state, env);
-            self.executor.execute_state_transitions(block, evm, state_hook)
-        }?;
+        // let env = self.evm_env_for_block(&block.header, total_difficulty);
+        // let output = {
+        //     let evm = self.evm_config.evm_with_env(&mut self.state, env);
+        //     self.executor.execute_state_transitions(block, evm, state_hook)
+        // };
 
-        // 3. apply post execution changes
-        self.post_execution(block, total_difficulty)?;
-
-        Ok(output)
+        Err(BlockExecutionError::Internal(InternalBlockExecutionError::msg(
+            "Execution result not found",
+        )))
     }
 
     /// Apply settings before a new block is executed.

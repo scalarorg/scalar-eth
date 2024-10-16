@@ -2,6 +2,7 @@ use ahash::AHashMap;
 use alloy_primitives::{Address, Bytes, B256, U256};
 use bitflags::bitflags;
 use bitvec::vec::BitVec;
+use reth_primitives::BlockWithSenders;
 use revm::{
     interpreter::analysis::to_analysed,
     primitives::{Account, Bytecode, JumpTable},
@@ -10,7 +11,9 @@ use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 use std::hash::{BuildHasherDefault, Hasher};
 use std::{collections::HashMap, sync::Arc};
+use tokio::sync::oneshot;
 
+use crate::executor::EthExecuteOutput;
 /// We use the last 8 bytes of an existing hash like address
 /// or code hash instead of rehashing it.
 // TODO: Make sure this is acceptable for production
@@ -258,6 +261,23 @@ pub(crate) type ReadSet = HashMap<MemoryLocationHash, ReadOrigins, BuildIdentity
 // to the multi-version data structure at the end of execution.
 pub(crate) type WriteSet = Vec<(MemoryLocationHash, MemoryValue)>;
 
+/// A struct for sending a block to executor
+#[derive(Debug)]
+pub struct BlockExecutionRequest {
+    pub(crate) block: BlockWithSenders,
+    pub(crate) total_difficulty: U256,
+    pub(crate) result_sender: oneshot::Sender<EthExecuteOutput>,
+}
+
+impl BlockExecutionRequest {
+    pub fn new(
+        block: BlockWithSenders,
+        total_difficulty: U256,
+        result_sender: oneshot::Sender<EthExecuteOutput>,
+    ) -> Self {
+        Self { block, total_difficulty, result_sender }
+    }
+}
 // A scheduled worker task
 // TODO: Add more useful work when there are idle workers like near
 // the end of block execution, while waiting for a huge blocking

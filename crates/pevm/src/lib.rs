@@ -22,14 +22,13 @@ pub mod dao_fork;
 pub mod eip6110;
 /// Executor module for handling EVM execution.
 pub mod executor;
-
-pub use config::{EthEvmConfig, ParallelEvmConfig, SequencialEvmConfig};
 // This optimization is desired as we constantly index into many
 // vectors of the block-size size. It can yield up to 5% improvement.
 #[macro_use]
 /// contains the `index_mutex!` macro.
 pub mod macros;
-
+pub use config::{EthEvmConfig, ParallelEvmConfig, SequencialEvmConfig};
+pub use executor::parallel::ParallelEthEvmExecutor;
 #[cfg(test)]
 mod tests {
     use super::*;

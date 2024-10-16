@@ -43,14 +43,17 @@ alloy-transport-http.workspace = true
 alloy-trie.workspace = true
 
 op-alloy-consensus.workspace = true
-op-alloy-network.workspace = true
+# op-alloy-network.workspace = true
 op-alloy-rpc-types.workspace = true
-op-alloy-rpc-types-engine.workspace = true
+# op-alloy-rpc-types-engine.workspace = true
 
+# anyhow = "1.0.89"
+# arc-swap = "1.7.1"
 async-scoped = {version="0.9.0", features=["use-tokio", "use-async-std"]}
 bitflags.workspace = true
 bitvec = "1.0.1"
 dashmap.workspace = true
+# once_cell.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 smallvec.workspace = true
