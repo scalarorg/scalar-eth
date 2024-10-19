@@ -31,11 +31,10 @@ pub(crate) struct VmDb<S: Storage> {
     to_code_hash: Option<B256>,
     // Indicates if we lazy update this transaction.
     // Only applied to raw transfers' senders & recipients at the moment.
-    pub(super) is_lazy: bool,
-    pub(super) read_set: ReadSet,
+    is_lazy: bool,
+    read_set: ReadSet,
     // TODO: Clearer type for [AccountBasic] plus code hash
-    pub(super) read_accounts:
-        HashMap<MemoryLocationHash, (AccountBasic, Option<B256>), BuildIdentityHasher>,
+    read_accounts: HashMap<MemoryLocationHash, (AccountBasic, Option<B256>), BuildIdentityHasher>,
 }
 
 impl<S: Storage> VmDb<S> {
@@ -385,7 +384,7 @@ impl<S: Storage> Database for VmDb<S> {
 
 pub(crate) trait DBTracking {
     fn is_lazy(&self) -> bool;
-    fn get_read_set(&self) -> &ReadSet;
+    fn get_read_set(&self) -> ReadSet;
     fn get_read_account(
         &self,
         location_hash: &MemoryLocationHash,
@@ -396,8 +395,9 @@ impl<S: Storage> DBTracking for VmDb<S> {
     fn is_lazy(&self) -> bool {
         self.is_lazy
     }
-    fn get_read_set(&self) -> &ReadSet {
-        &self.read_set
+    fn get_read_set(&self) -> ReadSet {
+        //self.read_set.clone()
+        ReadSet::with_hasher(self.hasher.clone())
     }
     fn get_read_account(
         &self,

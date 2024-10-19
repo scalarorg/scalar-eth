@@ -27,12 +27,9 @@ use tokio::{
     sync::{mpsc, RwLock},
 };
 
-use crate::{
-    executor::{
-        eth_evm_executor::EthExecuteOutput,
-        parallel::types::{EvmAccount, MemoryEntry, MemoryValue},
-    },
-    index_mutex,
+use crate::executor::{
+    eth_evm_executor::EthExecuteOutput,
+    parallel::types::{EvmAccount, MemoryEntry, MemoryValue},
 };
 
 use super::{
@@ -154,14 +151,33 @@ where
         let mut handles = Vec::new();
         let mut evms = Vec::new();
         for i in 0..thread_count {
+            let hasher = self.hasher.clone();
+            let state = self.state.clone();
+            let mv_memory = self.mv_memory.clone();
+            let scheduler = self.scheduler.clone();
+            let block_context = self.block_context.clone();
+            let chain = self.chain.clone();
             let evm_wapper = self.create_evm_wrapper(self.chain.clone(), i);
             evms.push(evm_wapper);
+            // let handle = tokio::spawn(async move {
+            //     debug!(target: "scalaris::pevm", "Started excution worker {}", i);
+            //     //let sub_hasher = hasher;
+            //     //let sub_state = state;
+            //     //let sub_mv_memory = mv_memory;
+            //     //let sub_scheduler = scheduler;
+            //     //let sub_block_context = block_context;
+            //     //let sub_chain = chain;
+            //     let evm_wapper =
+            //         EvmWrapper::new(i, hasher, state, mv_memory, scheduler, block_context, chain);
+            //     evm_wapper.start();
+            // });
+            // handles.push(handle);
         }
         for evm in evms.iter() {
             let evm_wapper = evm.clone();
             let handle = tokio::spawn(async move {
                 debug!(target: "scalaris::pevm", "Started excution worker {}", evm_wapper.get_index());
-                evm_wapper.start().await;
+                evm_wapper.start();
             });
             handles.push(handle);
         }
@@ -629,15 +645,15 @@ where
 //     }
 // }
 
-// fn try_validate(
+// async fn try_validate(
 //     mv_memory: &MvMemory,
 //     scheduler: &Scheduler,
 //     tx_version: &TxVersion,
 // ) -> Option<Task> {
-//     let read_set_valid = mv_memory.validate_read_locations(tx_version.tx_idx);
+//     let read_set_valid = mv_memory.validate_read_locations(tx_version.tx_idx).await;
 //     let aborted = !read_set_valid && scheduler.try_validation_abort(tx_version);
 //     if aborted {
-//         mv_memory.convert_writes_to_estimates(tx_version.tx_idx);
+//         mv_memory.convert_writes_to_estimates(tx_version.tx_idx).await;
 //     }
 //     scheduler.finish_validation(tx_version, aborted)
 // }

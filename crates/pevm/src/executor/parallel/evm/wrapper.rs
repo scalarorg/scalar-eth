@@ -80,14 +80,15 @@ impl<C: PevmChain, S: Storage> EvmWrapper<C, S> {
         self.scheduler.load()
     }
     ///Start evm thread for waiting task from scheduler and execute
-    pub async fn start(&self) {
+    pub fn start(&self) {
         let db = VmDb::new(self.mv_memory.clone(), self.storage.clone(), self.hasher.clone());
         let context =
             Context { evm: EvmContext::new_with_env(db, Box::new(Env::default())), external: () };
-        let handler = self.chain.get_handler(SpecId::LATEST, false);
+        let handler = self.chain.get_handler::<(), VmDb<S>>(SpecId::LATEST, false);
         let mut evm = Evm::new(context, handler);
         loop {
-            let mut task = self.get_scheduler().map_or(None, |scheduler| scheduler.next_task());
+            let mut task =
+                self.get_scheduler().as_ref().map_or(None, |scheduler| scheduler.next_task());
             while task.is_some() {
                 debug!(target: "scalaris::pevm", "try execute next task {:?}", &task);
                 task = match task.unwrap() {
@@ -101,12 +102,16 @@ impl<C: PevmChain, S: Storage> EvmWrapper<C, S> {
                 // verifiers may want to exit early to save CPU cycles, while testers
                 // may want to collect all execution results. We are exiting early as
                 // the default behaviour for now.
-                if abort_reason.get().is_some() {
-                    break;
-                }
+                //TaiVV: handle abort reason
+                // if abort_reason.get().is_some() {
+                //     break;
+                // }
 
                 if task.is_none() {
-                    task = self.get_scheduler().map_or(None, |scheduler| scheduler.next_task());
+                    task = self
+                        .get_scheduler()
+                        .as_ref()
+                        .map_or(None, |scheduler| scheduler.next_task());
                 }
             }
         }
