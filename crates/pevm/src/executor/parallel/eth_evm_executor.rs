@@ -14,7 +14,7 @@ use reth_evm::{
 use reth_execution_errors::{BlockValidationError, InternalBlockExecutionError};
 use reth_primitives::{BlockWithSenders, Header, Receipt, TxType};
 use reth_revm::{db::State, Evm};
-use reth_tracing::tracing::{debug, info};
+use reth_tracing::tracing::{debug, info, warn};
 use revm::{DatabaseCommit, InMemoryDB};
 use revm_primitives::{db::Database, EnvWithHandlerCfg, ResultAndState, TxEnv, U256};
 use std::{
@@ -151,12 +151,6 @@ where
         let mut handles = Vec::new();
         let mut evms = Vec::new();
         for i in 0..thread_count {
-            let hasher = self.hasher.clone();
-            let state = self.state.clone();
-            let mv_memory = self.mv_memory.clone();
-            let scheduler = self.scheduler.clone();
-            let block_context = self.block_context.clone();
-            let chain = self.chain.clone();
             let evm_wapper = self.create_evm_wrapper(self.chain.clone(), i);
             evms.push(evm_wapper);
             // let handle = tokio::spawn(async move {
@@ -186,7 +180,9 @@ where
             self.rx_execution_request.recv().await
         {
             //1. Create block env and tx envs, put them into mv memory
-            self.prepare_block_execution(block, &mut env);
+            if let Err(err) = self.prepare_block_execution(block, &mut env) {
+                warn!(target: "scalaris::pevm", "Failed to prepare block execution: {:?}", err);
+            }
             //2. Loop throw all evm wrappers and collect results
             //3. Send results to result sender
             //result_sender.send(EthExecuteOutput::new(receipts, total_difficulty))

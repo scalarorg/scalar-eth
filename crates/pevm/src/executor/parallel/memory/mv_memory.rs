@@ -194,7 +194,7 @@ impl MvMemory {
     // Replace the write set of the aborted version in the shared memory data
     // structure with special ESTIMATE markers to quickly abort higher transactions
     // that read them.
-    pub(crate) async fn convert_writes_to_estimates(&self, tx_idx: TxIdx) {
+    pub(crate) fn convert_writes_to_estimates(&self, tx_idx: TxIdx) {
         if let Some(last_locations) = self.last_locations.get(tx_idx) {
             let last_locations = last_locations.lock().unwrap();
             for location in last_locations.write.iter() {

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use reth::{
     providers::providers::{BlockchainProvider2, ProviderNodeTypes},
     rpc::api::eth::{helpers::AddDevSigners, FullEthApiServer},
@@ -11,7 +13,7 @@ use reth_node_builder::{
     NodeHandle,
 };
 use scalar_pevm::{
-    executor::parallel::{chain::PevmEthereum, types::BlockExecutionRequest},
+    executor::parallel::{chain::PevmEthereum, types::BlockExecutionRequest, InMemoryStorage},
     ParallelEthEvmExecutor, ParallelEvmConfig,
 };
 use tokio::sync::mpsc;
@@ -68,9 +70,17 @@ where
         let chain_spec = config.chain.clone();
         let chain = Arc::new(PevmEthereum::new(chain_spec.chain.id()));
         let evm_config = ParallelEvmConfig::new(chain_spec.clone());
+        //Todo: Load current state from db, then keep it in memory for best performance
+        //Consider using db as cache layer for state and storage incase of total state growth
+        let state = Arc::new(InMemoryStorage::default());
         task_executor.spawn(Box::pin(async move {
-            let mut evm_executor =
-                ParallelEthEvmExecutor::new(chain_spec, chain, evm_config, rx_execution_request);
+            let mut evm_executor = ParallelEthEvmExecutor::new(
+                chain_spec,
+                chain,
+                evm_config,
+                state,
+                rx_execution_request,
+            );
             evm_executor.start(thread_count).await;
         }));
         node_launcher.launch_node(target).await

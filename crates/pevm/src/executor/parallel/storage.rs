@@ -89,6 +89,6 @@ impl<'a, S: Storage> DatabaseRef for StorageWrapper<'a, S> {
 }
 
 mod in_memory;
-pub(crate) use in_memory::InMemoryStorage;
+pub use in_memory::InMemoryStorage;
 mod rpc;
-pub(crate) use rpc::RpcStorage;
+pub use rpc::RpcStorage;

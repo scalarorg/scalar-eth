@@ -11,7 +11,6 @@ use crate::executor::parallel::{
     },
     Scheduler,
 };
-use alloy_rpc_types::Header;
 use arc_swap::{ArcSwapOption, Guard};
 use reth_tracing::tracing::{debug, warn};
 use revm::{Context, Database, Evm, EvmContext};
@@ -63,24 +62,27 @@ impl<C: PevmChain, S: Storage> EvmWrapper<C, S> {
             reward_policy,
         }
     }
-    pub fn get_index(&self) -> usize {
+    pub(crate) fn get_index(&self) -> usize {
         self.index
     }
-    pub fn get_spec_id(&self, header: &Header) -> Result<SpecId, <C as PevmChain>::BlockSpecError> {
-        self.chain.get_block_spec(header)
-    }
+    // pub(crate) fn get_spec_id(
+    //     &self,
+    //     header: &Header,
+    // ) -> Result<SpecId, <C as PevmChain>::BlockSpecError> {
+    //     self.chain.get_block_spec(header)
+    // }
     #[inline(always)]
     pub(super) fn hash_basic(&self, address: Address) -> MemoryLocationHash {
         self.hasher.hash_one(MemoryLocation::Basic(address))
     }
-    fn get_mv_memory(&self) -> Guard<Option<Arc<MvMemory>>> {
-        self.mv_memory.load()
-    }
+    // fn get_mv_memory(&self) -> Guard<Option<Arc<MvMemory>>> {
+    //     self.mv_memory.load()
+    // }
     fn get_scheduler(&self) -> Guard<Option<Arc<Scheduler>>> {
         self.scheduler.load()
     }
     ///Start evm thread for waiting task from scheduler and execute
-    pub fn start(&self) {
+    pub(crate) fn start(&self) {
         let db = VmDb::new(self.mv_memory.clone(), self.storage.clone(), self.hasher.clone());
         let context =
             Context { evm: EvmContext::new_with_env(db, Box::new(Env::default())), external: () };

@@ -19,6 +19,7 @@ pub(crate) use eth_block_executor::ParallelEthBlockExecutor;
 pub use eth_evm_executor::ParallelEthEvmExecutor;
 use reth_evm::execute::ProviderError;
 use revm::{Database, State};
+pub use storage::InMemoryStorage;
 
 pub(crate) use scheduler::Scheduler;
 //pub type StateBox<'a> = StateDBBox<'a, ProviderError>;

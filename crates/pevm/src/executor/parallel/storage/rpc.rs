@@ -26,7 +26,7 @@ use super::{BlockHashes, Bytecodes, ChainState, EvmCode};
 type RpcProvider<N> = RootProvider<Http<Client>, N>;
 
 /// A storage that fetches state data via RPC for execution.
-pub(crate) struct RpcStorage<N: Network> {
+pub struct RpcStorage<N: Network> {
     provider: RpcProvider<N>,
     block_id: BlockId,
     precompiles: &'static Precompiles,

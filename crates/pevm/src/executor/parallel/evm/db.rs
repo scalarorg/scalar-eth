@@ -396,8 +396,15 @@ impl<S: Storage> DBTracking for VmDb<S> {
         self.is_lazy
     }
     fn get_read_set(&self) -> ReadSet {
-        //self.read_set.clone()
-        ReadSet::with_hasher(self.hasher.clone())
+        let read_set = ReadSet::with_capacity(self.read_set.len());
+        // for (key, value) in self.read_set.iter() {
+        //     let mut value_clone = SmallVec::with_capacity(value.len());
+        //     for origin in value.iter() {
+        //         value_clone.push(*origin.clone());
+        //     }
+        //     read_set.insert(key.clone(), value_clone);
+        // }
+        read_set
     }
     fn get_read_account(
         &self,

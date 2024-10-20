@@ -243,7 +243,7 @@ pub(crate) struct TxVersion {
 
 // The origin of a memory read. It could be from the live multi-version
 // data structure or from storage (chain state before block execution).
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub(crate) enum ReadOrigin {
     MvMemory(TxVersion),
     Storage,
