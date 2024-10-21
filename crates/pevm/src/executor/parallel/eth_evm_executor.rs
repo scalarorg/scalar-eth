@@ -214,7 +214,7 @@ where
         env: &mut EnvWithHandlerCfg,
     ) -> Result<(), C::BlockSpecError> {
         let block_size = block.transactions_with_sender().count();
-        // Create new mv memory store all block txs
+        //0. Fill block env, tx envs
         self.evm_config.fill_block_env(&mut env.block, &block.header, true);
         let mut txs = Vec::with_capacity(block_size);
         let mut tx_types = Vec::with_capacity(block_size);
@@ -224,6 +224,7 @@ where
             txs.push(tx);
             tx_types.push(transaction.tx_type());
         }
+        // 1. Create new mv memory store all block txs
         let mv_memory =
             self.chain.build_mv_memory(self.hasher.as_ref(), &env.block, txs.as_slice());
         //2. Update shared mv memory, so all evm wrappers can access to new block txs

@@ -11,7 +11,7 @@ use crate::executor::parallel::{
     },
     Scheduler,
 };
-use arc_swap::{ArcSwapOption, Guard};
+use arc_swap::{ArcSwap, ArcSwapOption, Guard};
 use reth_tracing::tracing::{debug, warn};
 use revm::{Context, Database, Evm, EvmContext};
 use revm_primitives::{
@@ -324,6 +324,7 @@ impl<C: PevmChain, S: Storage> EvmWrapper<C, S> {
                 } else {
                     FinishExecFlags::empty()
                 };
+                // Extract current read set, replace by new empty read set for next block execution
                 if mv_memory.is_some()
                     && mv_memory.as_ref().expect("mv_memory is None").record(
                         tx_version,

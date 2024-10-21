@@ -4,7 +4,7 @@ use reth_tracing::tracing::warn;
 use revm::primitives::Bytecode;
 use std::{
     collections::{BTreeMap, HashSet},
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 use crate::executor::parallel::types::{
@@ -14,7 +14,7 @@ use crate::executor::parallel::types::{
 //use crate::index_mutex;
 #[derive(Default, Debug)]
 struct LastLocations {
-    read: ReadSet,
+    read: Arc<Mutex<ReadSet>>,
     // Consider [SmallVec] since most transactions explicitly write to 2 locations!
     write: Vec<MemoryLocationHash>,
 }
@@ -88,7 +88,7 @@ impl MvMemory {
     pub(crate) fn record(
         &self,
         tx_version: &TxVersion,
-        read_set: ReadSet,
+        read_set: Arc<Mutex<ReadSet>>,
         write_set: WriteSet,
     ) -> bool {
         let last_locations = self.last_locations.get(tx_version.tx_idx);
@@ -149,12 +149,12 @@ impl MvMemory {
     // validations that successfully abort affect the state and each incarnation
     // can be aborted at most once).
     pub(crate) fn validate_read_locations(&self, tx_idx: TxIdx) -> bool {
-        let last_locations = self.last_locations.get(tx_idx);
-        if last_locations.is_none() {
+        let Some(last_locations) = self.last_locations.get(tx_idx) else {
             return true;
-        }
-        let last_locations = last_locations.unwrap().lock().unwrap();
-        for (location, prior_origins) in last_locations.read.iter() {
+        };
+
+        let last_locations = last_locations.lock().unwrap();
+        for (location, prior_origins) in last_locations.read.lock().expect("Mutex error").iter() {
             if let Some(written_transactions) = self.data.get(location) {
                 let mut iter = written_transactions.range(..tx_idx);
                 for prior_origin in prior_origins {

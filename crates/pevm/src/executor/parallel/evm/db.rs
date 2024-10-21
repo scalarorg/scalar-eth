@@ -1,7 +1,10 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use ahash::HashMapExt;
-use arc_swap::ArcSwapOption;
+use arc_swap::{ArcSwap, ArcSwapOption};
 use revm::Database;
 use revm_primitives::{AccountInfo, Address, Bytecode, TxEnv, TxKind, B256, KECCAK_EMPTY, U256};
 use smallvec::SmallVec;
@@ -32,7 +35,7 @@ pub(crate) struct VmDb<S: Storage> {
     // Indicates if we lazy update this transaction.
     // Only applied to raw transfers' senders & recipients at the moment.
     is_lazy: bool,
-    read_set: ReadSet,
+    read_set: ArcSwap<Mutex<ReadSet>>,
     // TODO: Clearer type for [AccountBasic] plus code hash
     read_accounts: HashMap<MemoryLocationHash, (AccountBasic, Option<B256>), BuildIdentityHasher>,
 }
@@ -57,7 +60,7 @@ impl<S: Storage> VmDb<S> {
             is_lazy: false,
             // Unless it is a raw transfer that is lazy updated, we'll
             // read at least from the sender and recipient accounts.
-            read_set: ReadSet::with_capacity(2),
+            read_set: ArcSwap::new(Arc::new(Mutex::new(ReadSet::with_capacity(2)))),
             read_accounts: HashMap::with_capacity_and_hasher(2, BuildIdentityHasher::default()),
         };
         // We only lazy update raw transfers that already have the sender
@@ -102,7 +105,11 @@ impl<S: Storage> VmDb<S> {
 
     fn get_code_hash(&mut self, address: Address) -> Result<Option<B256>, ReadError> {
         let location_hash = self.hasher.hash_one(MemoryLocation::CodeHash(address));
-        let read_origins = self.read_set.entry(location_hash).or_default();
+        let read_set = self.read_set.load();
+        let mut read_set =
+            read_set.lock().map_err(|err| ReadError::StorageError(err.to_string()))?;
+
+        let read_origins = read_set.entry(location_hash).or_default();
 
         // Try to read the latest code hash in [MvMemory]
         // TODO: Memoize read locations (expected to be small) here in [Vm] to avoid
@@ -163,7 +170,10 @@ impl<S: Storage> Database for VmDb<S> {
             }
         }
 
-        let read_origins = self.read_set.entry(location_hash).or_default();
+        let read_set = self.read_set.load();
+        let mut read_set =
+            read_set.lock().map_err(|err| ReadError::StorageError(err.to_string()))?;
+        let read_origins = read_set.entry(location_hash).or_default();
         let has_prev_origins = !read_origins.is_empty();
         // We accumulate new origins to either:
         // - match with the previous origins to check consistency
@@ -341,7 +351,10 @@ impl<S: Storage> Database for VmDb<S> {
     fn storage(&mut self, address: Address, index: U256) -> Result<U256, Self::Error> {
         let location_hash = self.hasher.hash_one(MemoryLocation::Storage(address, index));
 
-        let read_origins = self.read_set.entry(location_hash).or_default();
+        let read_set = self.read_set.load();
+        let mut read_set =
+            read_set.lock().map_err(|err| ReadError::StorageError(err.to_string()))?;
+        let read_origins = read_set.entry(location_hash).or_default();
 
         // Try reading from multi-version data
         let mv_memory = self.mv_memory.load();
@@ -384,7 +397,7 @@ impl<S: Storage> Database for VmDb<S> {
 
 pub(crate) trait DBTracking {
     fn is_lazy(&self) -> bool;
-    fn get_read_set(&self) -> ReadSet;
+    fn get_read_set(&self) -> Arc<Mutex<ReadSet>>;
     fn get_read_account(
         &self,
         location_hash: &MemoryLocationHash,
@@ -395,16 +408,9 @@ impl<S: Storage> DBTracking for VmDb<S> {
     fn is_lazy(&self) -> bool {
         self.is_lazy
     }
-    fn get_read_set(&self) -> ReadSet {
-        let read_set = ReadSet::with_capacity(self.read_set.len());
-        // for (key, value) in self.read_set.iter() {
-        //     let mut value_clone = SmallVec::with_capacity(value.len());
-        //     for origin in value.iter() {
-        //         value_clone.push(*origin.clone());
-        //     }
-        //     read_set.insert(key.clone(), value_clone);
-        // }
-        read_set
+    fn get_read_set(&self) -> Arc<Mutex<ReadSet>> {
+        let len = self.read_set.load().lock().unwrap().len();
+        self.read_set.swap(Arc::new(Mutex::new(ReadSet::with_capacity(len))))
     }
     fn get_read_account(
         &self,
