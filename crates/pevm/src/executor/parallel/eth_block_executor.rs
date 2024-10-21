@@ -118,12 +118,13 @@ where
         // 1. prepare state on new block
         self.on_new_block(&block.header);
         // 2. Send execution request to the execution thread
+        let env = self.evm_env_for_block(&block.header, total_difficulty);
         let (result_sender, mut result_receiver) = oneshot::channel();
-        self.tx_execution_request
-            .send(BlockExecutionRequest::new(block.clone(), total_difficulty, result_sender))
-            .map_err(|e| {
-                BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e)))
-            })?;
+        let block_request =
+            BlockExecutionRequest::new(block.clone(), env, total_difficulty, result_sender);
+        self.tx_execution_request.send(block_request).map_err(|e| {
+            BlockExecutionError::Internal(InternalBlockExecutionError::Other(Box::new(e)))
+        })?;
         // 3. Waiting for execution result
         // Loop until the execution is complete
         while let Ok(output) = result_receiver.try_recv() {

@@ -1,14 +1,17 @@
+use std::sync::Arc;
+
 use crate::executor::parallel::{
     chain::{PevmChain, RewardPolicy},
-    evm::ExecutionError,
+    evm::{ExecutionError, VmDb},
     memory::MvMemory,
     storage::Storage,
     types::{
-        AccountBasic, FinishExecFlags, MemoryLocation, MemoryLocationHash, MemoryValue, TxVersion,
-        WriteSet,
+        AccountBasic, FinishExecFlags, MemoryLocation, MemoryLocationHash, MemoryValue, Task,
+        TxVersion, WriteSet,
     },
+    Scheduler,
 };
-use reth_primitives::TxType;
+use arc_swap::{ArcSwap, ArcSwapOption, Guard};
 use reth_tracing::tracing::{debug, warn};
 use revm::{Context, Database, Evm, EvmContext};
 use revm_primitives::{
@@ -16,46 +19,136 @@ use revm_primitives::{
 };
 use smallvec::{smallvec, SmallVec};
 
-use super::{PevmTxExecutionResult, ReadError, VmDb, VmExecutionError, VmExecutionResult};
+use super::{
+    BlockContext, DBTracking, PevmTxExecutionResult, ReadError, VmExecutionError, VmExecutionResult,
+};
 
-pub(crate) struct EvmWrapper<'a, S: Storage, C: PevmChain> {
-    pub(super) hasher: &'a ahash::RandomState,
-    pub(super) storage: &'a S,
-    pub(super) mv_memory: &'a MvMemory,
-    chain: &'a C,
-    block_env: &'a BlockEnv,
-    txs: &'a [(TxEnv, TxType)],
-    spec_id: SpecId,
+pub(crate) struct EvmWrapper<C: PevmChain, S: Storage> {
+    index: usize,
+    pub(super) hasher: Arc<ahash::RandomState>,
+    pub(super) storage: Arc<S>,
+    mv_memory: Arc<ArcSwapOption<MvMemory>>,
+    scheduler: Arc<ArcSwapOption<Scheduler>>,
+    block_context: Arc<ArcSwapOption<BlockContext>>,
+    chain: Arc<C>,
     beneficiary_location_hash: MemoryLocationHash,
     reward_policy: RewardPolicy,
 }
 
-impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
+impl<C: PevmChain, S: Storage> EvmWrapper<C, S> {
     pub(crate) fn new(
-        hasher: &'a ahash::RandomState,
-        storage: &'a S,
-        mv_memory: &'a MvMemory,
-        chain: &'a C,
-        block_env: &'a BlockEnv,
-        txs: &'a [(TxEnv, TxType)],
-        spec_id: SpecId,
+        index: usize,
+        hasher: Arc<ahash::RandomState>,
+        storage: Arc<S>,
+        mv_memory: Arc<ArcSwapOption<MvMemory>>,
+        scheduler: Arc<ArcSwapOption<Scheduler>>,
+        block_context: Arc<ArcSwapOption<BlockContext>>,
+        chain: Arc<C>,
     ) -> Self {
+        let beneficiary_location_hash = block_context
+            .load()
+            .as_ref()
+            .map(|ctx| hasher.hash_one(MemoryLocation::Basic(ctx.block_env.coinbase)));
+        let reward_policy = chain.get_reward_policy(hasher.as_ref());
         Self {
+            index,
             hasher,
             storage,
             mv_memory,
+            scheduler,
+            block_context,
             chain,
-            block_env,
-            txs,
-            spec_id,
-            beneficiary_location_hash: hasher.hash_one(MemoryLocation::Basic(block_env.coinbase)),
-            reward_policy: chain.get_reward_policy(hasher),
+            beneficiary_location_hash: beneficiary_location_hash.unwrap_or_default(),
+            reward_policy,
         }
     }
-
+    pub(crate) fn get_index(&self) -> usize {
+        self.index
+    }
+    // pub(crate) fn get_spec_id(
+    //     &self,
+    //     header: &Header,
+    // ) -> Result<SpecId, <C as PevmChain>::BlockSpecError> {
+    //     self.chain.get_block_spec(header)
+    // }
     #[inline(always)]
     pub(super) fn hash_basic(&self, address: Address) -> MemoryLocationHash {
         self.hasher.hash_one(MemoryLocation::Basic(address))
+    }
+    // fn get_mv_memory(&self) -> Guard<Option<Arc<MvMemory>>> {
+    //     self.mv_memory.load()
+    // }
+    fn get_scheduler(&self) -> Guard<Option<Arc<Scheduler>>> {
+        self.scheduler.load()
+    }
+    ///Start evm thread for waiting task from scheduler and execute
+    pub(crate) fn start(&self) {
+        let db = VmDb::new(self.mv_memory.clone(), self.storage.clone(), self.hasher.clone());
+        let context =
+            Context { evm: EvmContext::new_with_env(db, Box::new(Env::default())), external: () };
+        let handler = self.chain.get_handler::<(), VmDb<S>>(SpecId::LATEST, false);
+        let mut evm = Evm::new(context, handler);
+        loop {
+            let mut task =
+                self.get_scheduler().as_ref().map_or(None, |scheduler| scheduler.next_task());
+            while task.is_some() {
+                debug!(target: "scalaris::pevm", "try execute next task {:?}", &task);
+                task = match task.unwrap() {
+                    Task::Execution(tx_version) => self.try_execute(&mut evm, tx_version),
+                    Task::Validation(tx_version) => self.try_validate(tx_version),
+                };
+                debug!(target: "scalaris::pevm", "Task after execute {:?}", &task);
+                // TODO: Have different functions or an enum for the caller to choose
+                // the handling behaviour when a transaction's EVM execution fails.
+                // Parallel block builders would like to exclude such transaction,
+                // verifiers may want to exit early to save CPU cycles, while testers
+                // may want to collect all execution results. We are exiting early as
+                // the default behaviour for now.
+                //TaiVV: handle abort reason
+                // if abort_reason.get().is_some() {
+                //     break;
+                // }
+
+                if task.is_none() {
+                    task = self
+                        .get_scheduler()
+                        .as_ref()
+                        .map_or(None, |scheduler| scheduler.next_task());
+                }
+            }
+        }
+    }
+    fn try_validate(&self, tx_version: TxVersion) -> Option<Task> {
+        let mv_memory = self.mv_memory.load();
+        let scheduler = self.scheduler.load();
+        if mv_memory.is_some() || scheduler.is_some() {
+            let read_set_valid =
+                mv_memory.as_ref().unwrap().validate_read_locations(tx_version.tx_idx);
+            let aborted =
+                !read_set_valid && scheduler.as_ref().unwrap().try_validation_abort(&tx_version);
+            if aborted {
+                mv_memory.as_ref().unwrap().convert_writes_to_estimates(tx_version.tx_idx);
+            }
+            return scheduler.as_ref().unwrap().finish_validation(&tx_version, aborted);
+        }
+        return None;
+    }
+    fn try_execute<EXT, DB>(
+        &self,
+        evm: &mut Evm<'_, EXT, DB>,
+        tx_version: TxVersion,
+    ) -> Option<Task>
+    where
+        DB: Database<Error = ReadError> + DBTracking,
+    {
+        let result = self.execute(evm, &tx_version);
+        match result {
+            Ok(result) => Some(Task::Validation(tx_version)),
+            Err(err) => {
+                warn!(target: "scalaris::pevm", "Execution failed: {:?}", err);
+                None
+            }
+        }
     }
 
     // Execute a transaction. This can read from memory but cannot modify any state.
@@ -74,36 +167,49 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
     // value are added to the write set, possibly replacing a pair with a prior value
     // (if it is not the first time the transaction wrote to this location during the
     // execution).
-    pub(crate) fn execute(
+    fn execute<EXT, DB>(
         &self,
+        evm: &mut Evm<'_, EXT, DB>,
         tx_version: &TxVersion,
-    ) -> Result<VmExecutionResult, VmExecutionError> {
-        debug!(target: "scalaris::pevm", "Executing transaction with index {} of {}", tx_version.tx_idx, self.txs.len());
+    ) -> Result<VmExecutionResult, VmExecutionError>
+    where
+        DB: Database<Error = ReadError> + DBTracking,
+    {
+        debug!(target: "scalaris::pevm", "Executing transaction with index {}", tx_version.tx_idx);
+        let block_context = self.block_context.load();
+        if block_context.is_none() {
+            return Err(VmExecutionError::ExecutionError(ExecutionError::Custom(format!(
+                "Block context not found for transaction at index {}",
+                tx_version.tx_idx
+            ))));
+        }
+        let block_context = block_context.as_ref().unwrap();
+        let spec_id = block_context.spec_id;
         // SAFETY: A correct scheduler would guarantee this index to be inbound.
-        let (tx, tx_type) = self.txs.get(tx_version.tx_idx).ok_or_else(|| {
+        let (tx, tx_type) = block_context.get_tx(tx_version.tx_idx).ok_or_else(|| {
             VmExecutionError::ExecutionError(ExecutionError::Custom(format!(
                 "Transaction at index {} not found",
                 tx_version.tx_idx
             )))
         })?;
-
+        // Set tx into evm's db
         let from_hash = self.hash_basic(tx.caller);
         let to_hash = tx.transact_to.to().map(|to| self.hash_basic(*to));
-
+        //
         // Execute
-        let mut db = VmDb::new(self, tx_version.tx_idx, tx, from_hash, to_hash)
-            .map_err(VmExecutionError::from)?;
+        // let mut db = VmDb::new(self, tx_version.tx_idx, tx, from_hash, to_hash)
+        //     .map_err(VmExecutionError::from)?;
         // TODO: Share as much [Evm], [Context], [Handler], etc. among threads as possible
         // as creating them is very expensive.
         warn!(target: "scalaris::pevm", "Build evm for each execution, must build seperate evm for each task executor");
-        let mut evm = build_evm(
-            &mut db,
-            self.chain,
-            self.spec_id,
-            self.block_env.clone(),
-            Some(tx.clone()),
-            false,
-        );
+        // let mut evm = build_evm(
+        //     &mut db,
+        //     self.chain,
+        //     self.spec_id,
+        //     self.block_env.clone(),
+        //     Some(tx.clone()),
+        //     false,
+        // );
         match evm.transact() {
             Ok(result_and_state) => {
                 // There are at least three locations most of the time: the sender,
@@ -120,10 +226,9 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                         ));
                         continue;
                     }
-
                     if account.is_touched() {
                         let account_location_hash = self.hash_basic(*address);
-                        let read_account = evm.db().read_accounts.get(&account_location_hash);
+                        let read_account = evm.db().get_read_account(&account_location_hash);
 
                         let has_code = !account.info.is_empty_code_hash();
                         let is_new_code = has_code
@@ -137,7 +242,7 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                                     || basic.balance != account.info.balance
                             })
                         {
-                            if evm.db().is_lazy {
+                            if evm.db().is_lazy() {
                                 if account_location_hash == from_hash {
                                     write_set.push((
                                         account_location_hash,
@@ -158,8 +263,7 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                             // and return a [None], i.e., [LoadedAsNotExisting]. Without
                             // this check it would write then read a [Some] default
                             // account, which may yield a wrong gas fee, etc.
-                            else if !self.chain.is_eip_161_enabled(self.spec_id)
-                                || !account.is_empty()
+                            else if !self.chain.is_eip_161_enabled(spec_id) || !account.is_empty()
                             {
                                 write_set.push((
                                     account_location_hash,
@@ -177,10 +281,15 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                                 self.hasher.hash_one(MemoryLocation::CodeHash(*address)),
                                 MemoryValue::CodeHash(account.info.code_hash),
                             ));
-                            self.mv_memory
-                                .new_bytecodes
-                                .entry(account.info.code_hash)
-                                .or_insert_with(|| account.info.code.clone().unwrap());
+                            let mv_memory = self.mv_memory.load();
+                            if mv_memory.is_some() {
+                                mv_memory
+                                    .as_ref()
+                                    .expect("mv_memory is None")
+                                    .new_bytecodes
+                                    .entry(account.info.code_hash)
+                                    .or_insert_with(|| account.info.code.clone().unwrap());
+                            }
                         }
                     }
 
@@ -201,26 +310,35 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                     &evm.context.evm,
                 )?;
 
-                drop(evm); // release db
-
-                if db.is_lazy {
-                    self.mv_memory.add_lazy_addresses([tx.caller, *tx.transact_to.to().unwrap()]);
+                //drop(evm); // release db
+                let mv_memory = self.mv_memory.load();
+                if evm.db().is_lazy() && mv_memory.is_some() {
+                    mv_memory
+                        .as_ref()
+                        .expect("mv_memory is None")
+                        .add_lazy_addresses([tx.caller, *tx.transact_to.to().unwrap()]);
                 }
 
-                let mut flags = if tx_version.tx_idx > 0 && !db.is_lazy {
+                let mut flags = if tx_version.tx_idx > 0 && !evm.db().is_lazy() {
                     FinishExecFlags::NeedValidation
                 } else {
                     FinishExecFlags::empty()
                 };
-
-                if self.mv_memory.record(tx_version, db.read_set, write_set) {
+                // Extract current read set, replace by new empty read set for next block execution
+                if mv_memory.is_some()
+                    && mv_memory.as_ref().expect("mv_memory is None").record(
+                        tx_version,
+                        evm.db().get_read_set(),
+                        write_set,
+                    )
+                {
                     flags |= FinishExecFlags::WroteNewLocation;
                 }
 
                 Ok(VmExecutionResult {
                     execution_result: PevmTxExecutionResult::from_revm(
-                        self.chain,
-                        self.spec_id,
+                        self.chain.as_ref(),
+                        spec_id,
                         result_and_state,
                         tx_type,
                     ),
@@ -258,13 +376,19 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
         gas_used: U256,
         #[cfg(feature = "optimism")] evm_context: &EvmContext<DB>,
     ) -> Result<(), VmExecutionError> {
+        let block_context = self.block_context.load();
+        if block_context.is_none() {
+            return Ok(());
+        }
+        let block_context = block_context.as_ref().unwrap();
+        let spec_id = block_context.spec_id;
         let mut gas_price = if let Some(priority_fee) = tx.gas_priority_fee {
-            std::cmp::min(tx.gas_price, priority_fee + self.block_env.basefee)
+            std::cmp::min(tx.gas_price, priority_fee + block_context.block_env.basefee)
         } else {
             tx.gas_price
         };
-        if self.chain.is_eip_1559_enabled(self.spec_id) {
-            gas_price = gas_price.saturating_sub(self.block_env.basefee);
+        if self.chain.is_eip_1559_enabled(spec_id) {
+            gas_price = gas_price.saturating_sub(block_context.block_env.basefee);
         }
 
         let rewards: SmallVec<[(MemoryLocationHash, U256); 1]> = match self.reward_policy {
@@ -288,12 +412,12 @@ impl<'a, S: Storage, C: PevmChain> EvmWrapper<'a, S, C> {
                     let Some(l1_block_info) = &evm_context.l1_block_info else {
                         panic!("[OPTIMISM] Missing l1_block_info.");
                     };
-                    let l1_cost = l1_block_info.calculate_tx_l1_cost(enveloped_tx, self.spec_id);
+                    let l1_cost = l1_block_info.calculate_tx_l1_cost(enveloped_tx, spec_id);
 
                     smallvec![
                         (self.beneficiary_location_hash, gas_price * gas_used),
                         (l1_fee_recipient_location_hash, l1_cost),
-                        (base_fee_vault_location_hash, self.block_env.basefee * gas_used,),
+                        (base_fee_vault_location_hash, block_context.block_env.basefee * gas_used,),
                     ]
                 }
             }

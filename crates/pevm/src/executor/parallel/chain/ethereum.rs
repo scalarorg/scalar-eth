@@ -6,7 +6,7 @@ use std::{
 };
 
 use alloy_chains::NamedChain;
-use alloy_consensus::{Receipt, ReceiptEnvelope, TxType};
+use alloy_consensus::{Header as ConsensusBlockHeader, Receipt, ReceiptEnvelope, TxType};
 use alloy_primitives::{B256, U256};
 use alloy_provider::network::eip2718::Encodable2718;
 use alloy_rpc_types::{BlockTransactions, Header};
@@ -26,17 +26,28 @@ use super::{CalculateReceiptRootError, PevmChain, RewardPolicy};
 
 /// Implementation of [PevmChain] for Ethereum
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PevmEthereum {
+pub struct PevmEthereum {
     id: u64,
 }
 
 impl PevmEthereum {
+    pub fn new(id: u64) -> Self {
+        Self { id }
+    }
     /// Ethereum Mainnet
-    pub(crate) fn mainnet() -> Self {
+    pub fn mainnet() -> Self {
         Self { id: NamedChain::Mainnet.into() }
     }
-
-    // TODO: support Ethereum Sepolia and other testnets
+    pub fn sepolia() -> Self {
+        Self { id: NamedChain::Sepolia.into() }
+    }
+    pub fn holesky() -> Self {
+        Self { id: NamedChain::Holesky.into() }
+    }
+    pub fn dev() -> Self {
+        Self { id: NamedChain::Dev.into() }
+    }
+    // TODO: support and other testnets
 }
 
 /// Error type for [PevmEthereum::get_block_spec].
@@ -128,6 +139,41 @@ impl PevmChain for PevmEthereum {
         })
     }
 
+    fn get_block_spec_from_consensus_header(
+        &self,
+        header: &ConsensusBlockHeader,
+    ) -> Result<SpecId, Self::BlockSpecError> {
+        Ok(if header.timestamp >= 1710338135 {
+            SpecId::CANCUN
+        } else if header.timestamp >= 1681338455 {
+            SpecId::SHANGHAI
+        }
+        // else if (header.total_difficulty.ok_or(EthereumBlockSpecError::MissingTotalDifficulty)?)
+        //     .saturating_sub(header.difficulty)
+        //     >= U256::from(58_750_000_000_000_000_000_000_u128)
+        // {
+        //     SpecId::MERGE
+        // }
+        else if header.number >= 12965000 {
+            SpecId::LONDON
+        } else if header.number >= 12244000 {
+            SpecId::BERLIN
+        } else if header.number >= 9069000 {
+            SpecId::ISTANBUL
+        } else if header.number >= 7280000 {
+            SpecId::PETERSBURG
+        } else if header.number >= 4370000 {
+            SpecId::BYZANTIUM
+        } else if header.number >= 2675000 {
+            SpecId::SPURIOUS_DRAGON
+        } else if header.number >= 2463000 {
+            SpecId::TANGERINE
+        } else if header.number >= 1150000 {
+            SpecId::HOMESTEAD
+        } else {
+            SpecId::FRONTIER
+        })
+    }
     /// Get the REVM tx envs of an Alloy block.
     // https://github.com/paradigmxyz/reth/blob/280aaaedc4699c14a5b6e88f25d929fe22642fa3/crates/primitives/src/revm/env.rs#L234-L339
     // https://github.com/paradigmxyz/reth/blob/280aaaedc4699c14a5b6e88f25d929fe22642fa3/crates/primitives/src/alloy_compat.rs#L112-L233
